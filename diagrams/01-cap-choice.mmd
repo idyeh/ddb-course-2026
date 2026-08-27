@@ -1,0 +1,11 @@
+flowchart TD
+  P{消息长期无法送达？}
+  P -->|是：分区期间| CA[不能同时保证线性一致与每个请求成功返回]
+  CA --> C[拒绝或等待部分请求\n保住一致性]
+  CA --> A[返回可能陈旧的结果\n保住可用性]
+  P -->|否：正常运行| LC[仍需权衡延迟与一致性]
+
+  classDef decision fill:#fff4ed,stroke:#c14f2f,stroke-width:2px,color:#17202a
+  classDef result fill:#eaf3f1,stroke:#0b6b6b,stroke-width:2px,color:#17202a
+  class P,CA decision
+  class C,A,LC result

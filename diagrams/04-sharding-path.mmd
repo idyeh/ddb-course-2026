@@ -1,0 +1,14 @@
+flowchart LR
+  K[业务键] --> H[分片函数或范围目录]
+  H --> G1[副本组 A]
+  H --> G2[副本组 B]
+  H --> G3[副本组 C]
+  G1 --> P1[Leader / Leaseholder]
+  G2 --> P2[Leader / Leaseholder]
+  G3 --> P3[Leader / Leaseholder]
+  P1 --> R[路由缓存与重试]
+  P2 --> R
+  P3 --> R
+
+  classDef node fill:#eaf3f1,stroke:#0b6b6b,stroke-width:2px,color:#17202a
+  class K,H,G1,G2,G3,P1,P2,P3,R node

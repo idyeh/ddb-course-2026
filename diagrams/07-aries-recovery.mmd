@@ -1,0 +1,8 @@
+flowchart LR
+  A[Analysis\n重建事务表与脏页表] --> R[Redo\n从 redoLSN 重复历史]
+  R --> U[Undo\n逆序撤销 loser]
+  U --> C[写补偿日志记录 CLR]
+  C --> D[恢复完成]
+
+  classDef node fill:#eaf3f1,stroke:#0b6b6b,stroke-width:2px,color:#17202a
+  class A,R,U,C,D node

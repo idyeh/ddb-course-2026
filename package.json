@@ -1,0 +1,26 @@
+{
+  "name": "distributed-db-courseware",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.19.0",
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=11"
+  },
+  "scripts": {
+    "present": "marp --server slides --theme-set theme/distributed-db.css --html --allow-local-files",
+    "build": "node scripts/build.mjs",
+    "diagrams": "node scripts/render-diagrams.mjs",
+    "render:qa": "node scripts/render-qa.mjs",
+    "browser:install": "playwright install chromium",
+    "check:source": "node scripts/check-source.mjs",
+    "check:html": "node scripts/check-html.mjs",
+    "check": "pnpm run check:source && pnpm run build && pnpm run check:html",
+    "test:examples": "python3 -m unittest discover -s examples -p 'test_*.py'"
+  },
+  "devDependencies": {
+    "@marp-team/marp-cli": "4.5.0",
+    "@mermaid-js/mermaid-cli": "11.16.0",
+    "playwright": "1.55.0"
+  }
+}

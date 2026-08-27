@@ -1,0 +1,11 @@
+flowchart LR
+  T[时间与因果] --> L[日志与顺序]
+  L --> R[复制与共识]
+  R --> S[分片与放置]
+  S --> X[事务与并发]
+  X --> Q[查询与数据移动]
+  Q --> C[快照与恢复]
+  C --> V[验证与选型]
+
+  classDef core fill:#eaf3f1,stroke:#0b6b6b,stroke-width:2px,color:#17202a
+  class T,L,R,S,X,Q,C,V core

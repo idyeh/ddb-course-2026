@@ -1,0 +1,14 @@
+flowchart LR
+  C[客户端命令] --> L[Leader 追加日志]
+  L --> F1[Follower 1]
+  L --> F2[Follower 2]
+  F1 --> M{当前任期条目\n达到多数？}
+  F2 --> M
+  M -->|是| A[推进 commitIndex]
+  A --> S[按索引应用状态机]
+  S --> OK[向客户端确认]
+
+  classDef node fill:#eaf3f1,stroke:#0b6b6b,stroke-width:2px,color:#17202a
+  classDef gate fill:#fff4ed,stroke:#c14f2f,stroke-width:2px,color:#17202a
+  class C,L,F1,F2,A,S,OK node
+  class M gate

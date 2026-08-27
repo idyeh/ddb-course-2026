@@ -1,0 +1,9 @@
+flowchart LR
+  G[Generator\n生成带唯一值的操作] --> C[Client\n记录调用与返回]
+  N[Nemesis\n注入分区、暂停、时钟故障] --> C
+  C --> H[History\n保留成功、失败与不确定]
+  H --> K[Checker\n线性化或依赖图分析]
+  K --> R[最小反例与复现种子]
+
+  classDef node fill:#eaf3f1,stroke:#0b6b6b,stroke-width:2px,color:#17202a
+  class G,C,N,H,K,R node

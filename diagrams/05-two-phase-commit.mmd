@@ -1,0 +1,13 @@
+sequenceDiagram
+  participant C as Coordinator
+  participant A as Shard A
+  participant B as Shard B
+  C->>A: Prepare(txn, writes)
+  C->>B: Prepare(txn, writes)
+  A->>A: 写入 prepared 状态并持有资源
+  B->>B: 写入 prepared 状态并持有资源
+  A-->>C: Yes / No
+  B-->>C: Yes / No
+  C->>C: 持久化 Commit 或 Abort 决议
+  C->>A: Commit / Abort
+  C->>B: Commit / Abort

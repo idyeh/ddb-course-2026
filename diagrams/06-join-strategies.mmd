@@ -1,0 +1,13 @@
+flowchart TB
+  Q{哪边小？键是否共置？}
+  Q -->|已按连接键共置| L[本地 Join\n不搬数据]
+  Q -->|一边足够小| B[广播小表\n复制到各节点]
+  Q -->|两边都大且未共置| S[Shuffle Join\n双方按连接键重分区]
+  L --> C[比较总字节、倾斜与尾延迟]
+  B --> C
+  S --> C
+
+  classDef gate fill:#fff4ed,stroke:#c14f2f,stroke-width:2px,color:#17202a
+  classDef node fill:#eaf3f1,stroke:#0b6b6b,stroke-width:2px,color:#17202a
+  class Q gate
+  class L,B,S,C node

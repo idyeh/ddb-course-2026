@@ -1,0 +1,11 @@
+sequenceDiagram
+  participant O as 订单服务
+  participant I as 库存服务
+  participant P as 支付服务
+  O->>O: e1 接收订单
+  O->>I: e2 检查库存
+  I->>I: e3 锁定库存
+  I-->>O: e4 库存已锁定
+  P->>P: p1 刷新汇率
+  Note over O,I: e1 → e2 → e3 → e4
+  Note over P: p1 与这条因果链并发

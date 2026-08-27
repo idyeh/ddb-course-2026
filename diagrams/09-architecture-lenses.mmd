@@ -1,0 +1,13 @@
+flowchart TB
+  B[业务不变式与延迟目标]
+  B --> T[事务语义\nSI / Serializable / Strict Serializable]
+  B --> P[放置与复制\nRange / Hash / Raft / Paxos]
+  B --> E[执行路径\n2PC / 确定性 / OCC]
+  B --> V[验证方法\n历史检查 / 仿真 / 故障注入]
+  T --> D[架构决策]
+  P --> D
+  E --> D
+  V --> D
+
+  classDef node fill:#eaf3f1,stroke:#0b6b6b,stroke-width:2px,color:#17202a
+  class B,T,P,E,V,D node
