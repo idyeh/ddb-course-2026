@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>课堂集群实验室 · 分布式数据库开发</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="mark"></span>
+    <div>
+      <strong>课堂集群实验室</strong>
+      <small>分布式数据库开发 · 确定性模拟 (deterministic simulation)</small>
+    </div>
+  </div>
+  <div class="topbar-actions">
+    <label class="switch" title="教学要点出现时自动暂停">
+      <input type="checkbox" id="pause-on-note" checked><span></span>要点暂停
+    </label>
+    <button class="ghost" id="btn-projector" title="投影模式：放大字号，隐藏侧栏">投影模式</button>
+    <button class="ghost" id="btn-export-svg">导出图形</button>
+    <button class="ghost" id="btn-export-json">导出轨迹</button>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="menu" id="menu" aria-label="演示菜单"></aside>
+
+  <main class="main">
+    <section class="stage card">
+      <div class="stage-head">
+        <div>
+          <h1 id="scenario-title">载入中…</h1>
+          <p id="scenario-subtitle"></p>
+        </div>
+        <div class="stage-badges">
+          <span class="badge" id="badge-seed"></span>
+          <span class="badge" id="badge-partition" hidden></span>
+        </div>
+      </div>
+      <p class="caveat" id="scenario-caveat" hidden></p>
+      <svg id="stage-svg" viewBox="0 0 960 466" preserveAspectRatio="xMidYMid meet" role="img"
+           aria-label="集群动画"></svg>
+      <div class="logs" id="log-matrix"></div>
+    </section>
+
+    <section class="transport card">
+      <button class="play" id="btn-play" aria-label="播放/暂停">▶</button>
+      <button class="ghost small" id="btn-prev" title="上一事件 (←)">◀|</button>
+      <button class="ghost small" id="btn-next" title="下一事件 (→)">|▶</button>
+      <input type="range" id="scrubber" min="0" max="1000" value="0" step="1" aria-label="时间轴">
+      <span class="tick" id="tick-readout">t = 0</span>
+      <label class="speed">速度
+        <input type="range" id="speed" min="20" max="600" step="20" value="140">
+        <span id="speed-readout">140×</span>
+      </label>
+    </section>
+
+    <section class="bottom">
+      <div class="card notes" id="notes">
+        <h2>教学要点 <small>teaching notes</small></h2>
+        <div class="note-list" id="note-list"></div>
+      </div>
+      <div class="card events">
+        <h2>事件日志 <small>event log</small></h2>
+        <div class="event-list" id="event-list"></div>
+      </div>
+    </section>
+  </main>
+
+  <aside class="panel" id="panel">
+    <div class="card prediction" id="prediction" hidden>
+      <h2>先猜后验 <small>predict first</small></h2>
+      <p class="q" id="prediction-question"></p>
+      <div class="options" id="prediction-options"></div>
+      <p class="reveal" id="prediction-reveal" hidden></p>
+    </div>
+
+    <div class="card">
+      <h2>参数 <small>parameters</small></h2>
+      <form id="param-form" autocomplete="off"></form>
+      <div class="run-row">
+        <button class="primary" id="btn-run">运行</button>
+        <button class="ghost" id="btn-reset">恢复默认</button>
+      </div>
+      <div class="run-row">
+        <button class="ghost wide" id="btn-sweep">种子扫描 (seed sweep)</button>
+      </div>
+      <div class="sweep" id="sweep-result" hidden></div>
+    </div>
+
+    <div class="card">
+      <h2>不变式 <small>invariants</small></h2>
+      <div id="checks" class="checks"><p class="dim">运行后显示检查结果。</p></div>
+    </div>
+
+    <div class="card">
+      <h2>指标 <small>metrics</small></h2>
+      <dl id="metrics" class="metrics"><p class="dim">运行后显示。</p></dl>
+    </div>
+
+    <div class="card takeaway" id="takeaway-card" hidden>
+      <h2>结论 <small>takeaway</small></h2>
+      <p id="takeaway"></p>
+    </div>
+  </aside>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

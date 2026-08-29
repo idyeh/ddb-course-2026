@@ -13,6 +13,16 @@
 
 也可以安装 VS Code 扩展 **Marp for VS Code**，打开 `slides/` 中任意 Markdown 文件后直接预览和演示。
 
+## 课堂演示
+
+`lab/` 是一个独立的集群模拟演示台，只依赖 Python 标准库与浏览器：
+
+    corepack pnpm lab
+
+或直接运行 `python3 lab/run.py serve`。菜单按讲次列出演示，表单配置参数，
+网页动画回放由 Python 生成的确定性事件轨迹。它不改动 `slides/`，也不参与课件构建。
+用法与课堂脚本见 `lab/README.md`。
+
 ## 维护约定
 
 - 一张幻灯片只表达一个主要结论。
@@ -29,6 +39,7 @@
 - `corepack pnpm check`：构建全部 HTML，并检测渲染后的页面越界。
 - `corepack pnpm render:qa`：将每一页渲染到 `.qa/slides/`，用于视觉复核。
 - `corepack pnpm test:examples`：运行所有 Python 示例测试。
+- `corepack pnpm test:lab`：运行课堂演示台的契约、正向与反例测试。
 
 ## 目录说明
 
@@ -37,4 +48,5 @@
 - `diagrams/`：可维护的 Mermaid 图源文件。
 - `assets/`：图片和生成的 SVG。
 - `examples/`：可运行、可测试的 Python 示例。
+- `lab/`：课堂集群模拟演示台，含网页动画与命令行入口。
 - `dist/`：生成的离线 HTML。

@@ -16,7 +16,9 @@
     "check:source": "node scripts/check-source.mjs",
     "check:html": "node scripts/check-html.mjs",
     "check": "pnpm run check:source && pnpm run build && pnpm run check:html",
-    "test:examples": "python3 -m unittest discover -s examples -p 'test_*.py'"
+    "test:examples": "python3 -m unittest discover -s examples -p 'test_*.py'",
+    "test:lab": "python3 -m unittest discover -s lab -t lab -p 'test_*.py'",
+    "lab": "python3 lab/run.py serve"
   },
   "devDependencies": {
     "@marp-team/marp-cli": "4.5.0",

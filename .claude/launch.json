@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "cluster-lab",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["lab/run.py", "serve", "--no-open", "--port", "8017"],
+      "port": 8017
+    }
+  ]
+}
