@@ -48,15 +48,26 @@ class Client:
             "op": label(command),
             "command": command,
         }
+        attempt["kind"] = command["kind"]
         self._open[request_id] = attempt
         self.history.append(attempt)
         self.trace.record(self.kernel.now, "client.call", client=self.id,
                           opId=command["opId"], reqId=request_id, op=label(command),
-                          target=target)
-        self.network.send(self.id, target, {"type": "ClientRequest", "command": command,
-                                            "opId": command["opId"], "reqId": request_id},
-                          label=label(command))
+                          kind=command["kind"], key=command.get("key"),
+                          value=command.get("value"), target=target)
+        self.network.send(self.id, target, self._envelope(command), label=label(command))
         self.kernel.schedule(self.timeout, lambda: self._on_timeout(request_id))
+
+    @staticmethod
+    def _envelope(command: dict[str, Any]) -> dict[str, Any]:
+        if command["kind"] == "read":
+            return {"type": "ClientRead", "key": command["key"],
+                    "opId": command["opId"], "reqId": command["reqId"]}
+        if command["kind"] == "txn":
+            return {"type": "BeginTxn", "writes": command["writes"],
+                    "opId": command["opId"], "reqId": command["reqId"]}
+        return {"type": "ClientRequest", "command": command,
+                "opId": command["opId"], "reqId": command["reqId"]}
 
     def receive(self, source: str, message: dict[str, Any]) -> None:
         if message.get("type") != "ClientReply":
@@ -73,13 +84,17 @@ class Client:
                 self.trace.record(self.kernel.now, "client.redirect", client=self.id,
                                   opId=attempt["opId"], reqId=attempt["reqId"],
                                   **{"from": source}, to=hint)
-                self.network.send(self.id, hint,
-                                  {"type": "ClientRequest", "command": attempt["command"],
-                                   "opId": attempt["opId"], "reqId": attempt["reqId"]},
+                self.network.send(self.id, hint, self._envelope(attempt["command"]),
                                   label=attempt["op"])
             return
 
+        if message["status"] == "unavailable":
+            # An explicit refusal is a real answer: the operation did not happen.
+            self._resolve(attempt, "fail", reason=message.get("reason", ""))
+            return
+
         self._resolve(attempt, "ok", result=message.get("result"),
+                      served_by=message.get("servedBy"),
                       index=message.get("index"), acked_locally=message.get("ackedLocally", False),
                       deduped=message.get("deduped", False))
 
@@ -98,7 +113,8 @@ class Client:
         self._open.pop(attempt["reqId"], None)
         self.trace.record(self.kernel.now, "client.return", client=self.id,
                           opId=attempt["opId"], reqId=attempt["reqId"], op=attempt["op"],
-                          status=status, calledAt=attempt["calledAt"],
+                          kind=attempt.get("kind", "write"), status=status,
+                          calledAt=attempt["calledAt"],
                           **{key: value for key, value in fields.items() if value is not None})
 
     def outcomes(self) -> list[dict[str, Any]]:

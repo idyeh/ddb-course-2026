@@ -148,7 +148,13 @@ button.wide { width: 100%; }
   margin: 10px 0 0; font-size: 12px; color: var(--accent-2);
   background: var(--warm); border-radius: 9px; padding: 7px 11px;
 }
-#stage-svg { width: 100%; height: auto; display: block; margin-top: 4px; }
+#stage-svg, #history-svg { width: 100%; height: auto; display: block; margin-top: 4px; }
+.view-tabs { display: flex; gap: 6px; margin: 12px 0 2px; }
+.view-tabs button { font-size: 12.5px; padding: 5px 12px; border-radius: 999px; }
+.view-tabs button[aria-pressed="true"] {
+  background: var(--soft); border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  color: var(--accent); font-weight: 650;
+}
 
 .logs { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
 .log-row { display: flex; justify-content: center; align-items: center; gap: 10px; }
@@ -166,6 +172,13 @@ button.wide { width: 100%; }
 }
 .cell b { font-size: 11px; font-weight: 700; }
 .cell.empty { background: transparent; border: 1px dashed var(--line); }
+.cell.snapshot {
+  background: color-mix(in srgb, #4a6fa5 10%, transparent);
+  border: 1px dashed color-mix(in srgb, #4a6fa5 40%, transparent);
+  border-left-width: 0; border-right-width: 0;
+  color: color-mix(in srgb, #4a6fa5 70%, transparent);
+}
+.cell.snapshot b { font-size: 10px; color: #4a6fa5; }
 .cell.conflict {
   background: repeating-linear-gradient(135deg,
     color-mix(in srgb, var(--accent-2) 24%, transparent) 0 5px,

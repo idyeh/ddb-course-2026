@@ -58,12 +58,16 @@ class Handler(SimpleHTTPRequestHandler):
         if self.path.startswith("/api/"):
             super().log_message(fmt, *args)
 
+    def end_headers(self) -> None:
+        # Nothing is cached: editing a scenario or a view should show up on reload.
+        self.send_header("Cache-Control", "no-store")
+        super().end_headers()
+
     def _json(self, payload: Any, status: int = 200) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
 

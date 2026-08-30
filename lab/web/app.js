@@ -2,6 +2,11 @@
 
 import { Player } from "./player.js";
 import { ClusterView } from "./views/cluster.js";
+import { HistoryView } from "./views/history.js";
+import { TimelineView } from "./views/timeline.js";
+import { ShardsView } from "./views/shards.js";
+import { StorageView } from "./views/storage.js";
+import { DataflowView } from "./views/dataflow.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -28,10 +33,23 @@ const app = {
   eventCursor: 0,
 };
 
-const view = new ClusterView($("stage-svg"), $("log-matrix"));
+const VIEW_LABEL = { cluster: "集群 cluster", history: "客户端历史 history",
+                     timeline: "时空图 timeline", shards: "分片 shards",
+                     storage: "日志与恢复 storage",
+                     dataflow: "算子与数据流 dataflow" };
+const views = {
+  cluster: new ClusterView($("stage-svg"), $("log-matrix")),
+  history: new HistoryView($("history-svg")),
+  timeline: new TimelineView($("timeline-svg")),
+  shards: new ShardsView($("shards-svg")),
+  storage: new StorageView($("storage-svg")),
+  dataflow: new DataflowView($("dataflow-svg")),
+};
+app.activeView = "cluster";
+
 const player = new Player({
   onRender: (snapshot) => {
-    view.render(snapshot);
+    views[app.activeView]?.render(snapshot);
     $("scrubber").value = String(Math.round((snapshot.t / snapshot.duration) * 1000));
     $("tick-readout").textContent = `t = ${Math.round(snapshot.t)} / ${snapshot.duration}`;
     $("btn-play").textContent = player.playing ? "❚❚" : "▶";
@@ -227,7 +245,9 @@ async function run() {
     app.trace = trace;
     app.eventCursor = 0;
     $("badge-seed").textContent = `seed ${trace.seed}`;
-    view.setTrace(trace);
+    for (const instance of Object.values(views)) instance.setTrace(trace);
+    renderViewTabs(trace.views || ["cluster"]);
+    highlightCounterexample(trace.summary.checks || []);
     player.load(trace);
     renderChecks(trace.summary.checks || []);
     renderMetrics(trace.summary.metrics || {});
@@ -235,6 +255,43 @@ async function run() {
   } catch (error) {
     toast(`运行失败：${error.message}`);
   }
+}
+
+function renderViewTabs(names) {
+  const host = $("view-tabs");
+  host.replaceChildren();
+  host.hidden = names.length < 2;
+  if (!names.includes(app.activeView)) app.activeView = names[0];
+  for (const name of names) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = VIEW_LABEL[name] || name;
+    button.setAttribute("aria-pressed", String(name === app.activeView));
+    button.addEventListener("click", () => {
+      app.activeView = name;
+      renderViewTabs(names);
+      player.seek(player.t);
+    });
+    host.appendChild(button);
+  }
+  for (const [name, container] of Object.entries(viewContainers())) {
+    container.hidden = name !== app.activeView;
+  }
+}
+
+function viewContainers() {
+  const map = {};
+  for (const node of document.querySelectorAll(".view")) map[node.dataset.view] = node;
+  return map;
+}
+
+/** Outline the operations a failing checker singled out. */
+function highlightCounterexample(checks) {
+  const failing = checks.find((check) => !check.ok && check.counterexample?.length);
+  const ids = failing
+    ? failing.counterexample.map((event) => event.opId ?? event.id).filter(Boolean)
+    : [];
+  for (const instance of Object.values(views)) instance.highlight?.(ids);
 }
 
 function renderChecks(checks) {
@@ -466,18 +523,22 @@ function download(name, blob) {
 }
 
 function exportSvg() {
-  const svg = $("stage-svg").cloneNode(true);
+  const source = { history: $("history-svg"), timeline: $("timeline-svg"),
+                   shards: $("shards-svg"), storage: $("storage-svg"),
+                   dataflow: $("dataflow-svg") }[app.activeView] || $("stage-svg");
+  const svg = source.cloneNode(true);
   svg.setAttribute("xmlns", "http://www.w3.org/2000/svg");
   const style = getComputedStyle(document.documentElement);
+  const [, , boxWidth, boxHeight] = source.getAttribute("viewBox").split(/\s+/);
   const background = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-  background.setAttribute("width", "960");
-  background.setAttribute("height", "466");
+  background.setAttribute("width", boxWidth);
+  background.setAttribute("height", boxHeight);
   background.setAttribute("fill", style.getPropertyValue("--paper").trim() || "#fbfaf7");
   svg.insertBefore(background, svg.firstChild);
   let text = new XMLSerializer().serializeToString(svg);
   text = text.replace(/var\(--([a-z0-9-]+)\)/g,
     (match, name) => style.getPropertyValue(`--${name}`).trim() || match);
-  download(`${app.current.id}-t${Math.round(player.t)}.svg`,
+  download(`${app.current.id}-${app.activeView}-t${Math.round(player.t)}.svg`,
            new Blob([text], { type: "image/svg+xml" }));
 }
 

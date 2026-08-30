@@ -11,12 +11,45 @@ const GROUP_COLORS = ["var(--accent)", "var(--accent-2)", "#b08900", "#4a6fa5"];
 const TERM_COLORS = ["#0b6b6b", "#c14f2f", "#4a6fa5", "#7a5ea8", "#b08900", "#2f8f5b", "#a3486b"];
 
 const KINDS = {
-  RequestVote: { short: "RV", color: "#c14f2f" },
+  RequestVote: { short: "RV", color: "#c14f2f", legend: "RequestVote 请求投票" },
   RequestVoteReply: { short: "RV↩", color: "#c14f2f", hollow: true },
-  AppendEntries: { short: "AE", color: "#0b6b6b" },
+  AppendEntries: { short: "AE", color: "#0b6b6b", legend: "AppendEntries 日志/心跳" },
   AppendEntriesReply: { short: "AE↩", color: "#0b6b6b", hollow: true },
-  ClientRequest: { short: "REQ", color: "#7a5ea8" },
+  InstallSnapshot: { short: "SNAP", color: "#4a6fa5", legend: "InstallSnapshot 快照安装" },
+  ReadIndexRequest: { short: "RI", color: "#2f8f5b", legend: "ReadIndex 读位置确认" },
+  ReadIndexReply: { short: "RI↩", color: "#2f8f5b", hollow: true },
+  Prepare: { short: "PRE", color: "#b08900", legend: "Prepare / Vote 表决" },
+  Vote: { short: "VOTE", color: "#b08900", hollow: true },
+  Decide: { short: "DEC", color: "#0b6b6b", legend: "Decide 决议下发" },
+  StatusQuery: { short: "?", color: "var(--muted)", hollow: true, legend: "StatusQuery 询问决议" },
+  BeginTxn: { short: "TXN", color: "#7a5ea8", legend: "客户端事务请求" },
+  ClientRequest: { short: "REQ", color: "#7a5ea8", legend: "客户端请求与回复" },
+  ClientRead: { short: "GET", color: "#7a5ea8", legend: "客户端读请求" },
   ClientReply: { short: "RSP", color: "#7a5ea8", hollow: true },
+};
+
+// A node is drawn from its reported state, so consensus roles and transaction
+// states share one renderer.
+const STATE_STYLE = {
+  leader: { fill: "var(--accent)", text: "#fff", stroke: "var(--accent)", caption: "Leader" },
+  candidate: { stroke: "var(--accent-2)", dash: "7 4", width: 3, caption: "Candidate" },
+  follower: { stroke: "var(--line)", caption: "Follower" },
+  coordinator: { fill: "#7a5ea8", text: "#fff", stroke: "#7a5ea8", caption: "Coordinator 协调者" },
+  backup: { stroke: "#7a5ea8", dash: "6 4", caption: "Backup 备用协调者" },
+  idle: { stroke: "var(--line)", caption: "idle 空闲" },
+  prepared: {
+    fill: "color-mix(in srgb, #b08900 22%, transparent)", stroke: "#b08900", width: 3,
+    caption: "prepared 持锁等待",
+  },
+  committed: {
+    fill: "color-mix(in srgb, var(--accent) 18%, transparent)", stroke: "var(--accent)",
+    caption: "committed 已提交",
+  },
+  aborted: { stroke: "var(--accent-2)", dash: "4 4", caption: "aborted 已回滚" },
+  participant: { stroke: "#4a6fa5", caption: "参与者 participant" },
+  clock: { stroke: "#b08900", dash: "6 4", caption: "时间 / 版本服务" },
+  record: { stroke: "#2f8f5b", dash: "6 4", caption: "记录 / 日志服务" },
+  shard: { stroke: "#4a6fa5", caption: "分片 shard" },
 };
 
 export function termColor(term) {
@@ -50,6 +83,11 @@ export class ClusterView {
         y: center.y + RADIUS * Math.sin(angle),
       };
     });
+    const kinds = new Set(trace.events.filter((e) => e.type === "msg.send").map((e) => e.kind));
+    this.legend = [...kinds]
+      .map((kind) => KINDS[kind])
+      .filter((style) => style && style.legend)
+      .slice(0, 4);
     this.clientId = trace.clients[0]?.id || null;
     if (this.clientId) {
       this.positions[this.clientId] = { x: CLIENT.x + CLIENT.w / 2, y: CLIENT.y + CLIENT.h / 2 };
@@ -104,8 +142,8 @@ export class ClusterView {
     for (const [id, position] of Object.entries(this.positions)) {
       if (id === this.clientId) continue;
       const node = state.nodes[id];
-      const isLeader = node.alive && node.state === "leader";
-      const isCandidate = node.alive && node.state === "candidate";
+      const style = STATE_STYLE[node.state] || STATE_STYLE.follower;
+      const solid = Boolean(style.fill && style.text);
       const ring = state.partitions ? GROUP_COLORS[groupOf(id) % GROUP_COLORS.length] : null;
       const item = el("g", { opacity: node.alive ? 1 : 0.42 });
 
@@ -117,34 +155,42 @@ export class ClusterView {
       }
       item.appendChild(el("circle", {
         cx: position.x, cy: position.y, r: NODE_R,
-        fill: isLeader ? "var(--accent)" : "var(--surface)",
-        stroke: !node.alive ? "var(--muted)"
-          : isCandidate ? "var(--accent-2)" : isLeader ? "var(--accent)" : "var(--line)",
-        "stroke-width": isCandidate ? 3 : 2,
-        "stroke-dasharray": !node.alive ? "5 4" : isCandidate ? "7 4" : "none",
+        fill: node.alive && style.fill ? style.fill : "var(--surface)",
+        stroke: node.alive ? (style.stroke || "var(--line)") : "var(--muted)",
+        "stroke-width": node.alive ? (style.width || 2) : 2,
+        "stroke-dasharray": node.alive ? (style.dash || "none") : "5 4",
       }));
       item.appendChild(el("text", {
-        x: position.x, y: position.y + 2, "text-anchor": "middle",
+        x: position.x, y: position.y + (node.term > 0 ? 2 : 7), "text-anchor": "middle",
         "font-size": 19, "font-weight": 700,
-        fill: isLeader ? "#fff" : "var(--ink)",
+        fill: node.alive && solid ? style.text : "var(--ink)",
       }, id));
-      item.appendChild(el("text", {
-        x: position.x, y: position.y + 20, "text-anchor": "middle", "font-size": 11,
-        "font-family": "var(--mono)", fill: isLeader ? "#d7eeee" : "var(--muted)",
-      }, `term ${node.term}`));
+      if (node.term > 0) {
+        item.appendChild(el("text", {
+          x: position.x, y: position.y + 20, "text-anchor": "middle", "font-size": 11,
+          "font-family": "var(--mono)",
+          fill: node.alive && solid ? "#d7eeee" : "var(--muted)",
+        }, `term ${node.term}`));
+      }
 
-      const caption = !node.alive ? "崩溃 crashed"
-        : isLeader ? "Leader" : isCandidate ? "Candidate" : "Follower";
+      const caption = node.alive ? style.caption : "崩溃 crashed";
       item.appendChild(el("text", {
         x: position.x, y: position.y + NODE_R + 17, "text-anchor": "middle", "font-size": 11,
-        fill: isLeader ? "var(--accent)" : isCandidate ? "var(--accent-2)" : "var(--muted)",
-        "font-weight": isLeader ? 700 : 500,
+        fill: node.alive ? (style.stroke || "var(--muted)") : "var(--muted)",
+        "font-weight": node.alive && style.fill ? 700 : 500,
       }, caption));
-      if (node.machine) {
+      const detail = node.detail || node.machine;
+      if (detail) {
         item.appendChild(el("text", {
           x: position.x, y: position.y + NODE_R + 31, "text-anchor": "middle",
           "font-size": 10, "font-family": "var(--mono)", fill: "var(--muted)",
-        }, node.machine));
+        }, detail));
+      }
+      if (node.base) {
+        item.appendChild(el("text", {
+          x: position.x, y: position.y + NODE_R + 44, "text-anchor": "middle",
+          "font-size": 10, "font-family": "var(--mono)", fill: "#4a6fa5",
+        }, `快照 ≤ ${node.base}`));
       }
       if (!node.alive) {
         item.appendChild(el("text", {
@@ -230,18 +276,14 @@ export class ClusterView {
   }
 
   _legend() {
-    const group = el("g", { transform: "translate(22, 396)" });
-    const items = [
-      ["RV", "#c14f2f", "RequestVote 请求投票"],
-      ["AE", "#0b6b6b", "AppendEntries 日志/心跳"],
-      ["REQ", "#7a5ea8", "客户端请求与回复"],
-    ];
-    items.forEach(([short, color, text], index) => {
+    const items = this.legend || [];
+    const group = el("g", { transform: `translate(22, ${412 - items.length * 20})` });
+    items.forEach((style, index) => {
       const y = index * 20;
-      group.appendChild(el("circle", { cx: 6, cy: y, r: 6, fill: color }));
+      group.appendChild(el("circle", { cx: 6, cy: y, r: 6, fill: style.color }));
       group.appendChild(el("text", {
         x: 20, y: y + 4, "font-size": 11, fill: "var(--muted)",
-      }, `${short} · ${text}`));
+      }, `${style.short} · ${style.legend}`));
     });
     return group;
   }
@@ -288,7 +330,12 @@ export class ClusterView {
         const entry = node.log[index - 1];
         const cell = document.createElement("div");
         const committed = state.committed[index];
-        if (!entry) {
+        if (index <= (node.base || 0)) {
+          // Draw the compacted prefix as one band, labelled only at its edge.
+          cell.className = "cell snapshot";
+          cell.innerHTML = index === node.base ? `<b>快照 ≤ ${node.base}</b>snapshot` : "·";
+          cell.title = `索引 ${index} 已压缩进快照（lastIncludedIndex = ${node.base}）`;
+        } else if (!entry) {
           cell.className = "cell empty";
         } else {
           const color = termColor(entry.term);

@@ -130,7 +130,7 @@ function emptyState(trace) {
   for (const node of trace.nodes) {
     nodes[node.id] = {
       id: node.id, state: "follower", term: 0, alive: true,
-      commit: 0, votedFor: null, log: [], machine: "",
+      commit: 0, votedFor: null, log: [], machine: "", detail: "", base: 0,
     };
   }
   return { t: 0, cursor: 0, nodes, partitions: null, committed: {}, notes: [], client: {} };
@@ -154,10 +154,15 @@ function applyEvent(state, event) {
       if (node) Object.assign(node, {
         state: event.state, term: event.term, votedFor: event.votedFor,
         commit: event.commit, alive: event.alive,
+        detail: event.detail ?? node.detail,
       });
       break;
     case "node.crash":
+      // The log and the snapshot are on disk; volatile state is what is lost.
       if (node) Object.assign(node, { alive: false, state: "follower", commit: 0, machine: "" });
+      break;
+    case "log.snapshot":
+      if (node) Object.assign(node, { base: event.index, machine: event.state ?? node.machine });
       break;
     case "node.restart":
       if (node) node.alive = true;

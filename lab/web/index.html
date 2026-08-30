@@ -41,9 +41,32 @@
         </div>
       </div>
       <p class="caveat" id="scenario-caveat" hidden></p>
-      <svg id="stage-svg" viewBox="0 0 960 466" preserveAspectRatio="xMidYMid meet" role="img"
-           aria-label="集群动画"></svg>
-      <div class="logs" id="log-matrix"></div>
+      <div class="view-tabs" id="view-tabs" hidden></div>
+      <div class="view" data-view="cluster">
+        <svg id="stage-svg" viewBox="0 0 960 466" preserveAspectRatio="xMidYMid meet" role="img"
+             aria-label="集群动画"></svg>
+        <div class="logs" id="log-matrix"></div>
+      </div>
+      <div class="view" data-view="history" hidden>
+        <svg id="history-svg" viewBox="0 0 960 320" preserveAspectRatio="xMidYMid meet" role="img"
+             aria-label="客户端历史"></svg>
+      </div>
+      <div class="view" data-view="shards" hidden>
+        <svg id="shards-svg" viewBox="0 0 960 452" preserveAspectRatio="xMidYMid meet" role="img"
+             aria-label="分片路由与负载"></svg>
+      </div>
+      <div class="view" data-view="dataflow" hidden>
+        <svg id="dataflow-svg" viewBox="0 0 960 470" preserveAspectRatio="xMidYMid meet"
+             role="img" aria-label="算子与数据流"></svg>
+      </div>
+      <div class="view" data-view="storage" hidden>
+        <svg id="storage-svg" viewBox="0 0 960 470" preserveAspectRatio="xMidYMid meet" role="img"
+             aria-label="日志与恢复"></svg>
+      </div>
+      <div class="view" data-view="timeline" hidden>
+        <svg id="timeline-svg" viewBox="0 0 960 380" preserveAspectRatio="xMidYMid meet" role="img"
+             aria-label="进程时空图"></svg>
+      </div>
     </section>
 
     <section class="transport card">

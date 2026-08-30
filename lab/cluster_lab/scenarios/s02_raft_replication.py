@@ -41,7 +41,7 @@ NORMAL_END = 2400
 def _figure8(params: dict[str, Any], seed: int) -> RunResult:
     kernel, trace, network, cluster = build(
         "raft-replication", "日志复制与提交规则", params, seed, FIGURE8_NODES,
-        auto_election=False, commit_rule=params["commit_rule"],
+        auto_election=False, commit_rule=params["commit_rule"], leader_noop=False,
     )
     client = Client("客户端", kernel, trace, network, timeout=250)
     naive = params["commit_rule"] == NAIVE_MAJORITY
@@ -221,5 +221,7 @@ register(Scenario(
     ),
     invariants=("committed_prefix_stable", "single_leader_per_term", "at_most_once"),
     faults=("partition", "crash", "restart", "drop"),
-    caveat="figure8 为受控编排：关闭自发选举超时、由剧本触发换届，用于稳定复现论文场景。",
+    caveat="figure8 为受控编排：关闭自发选举超时、由剧本触发换届；"
+           "同时关闭了新 Leader 的 noop 条目——论文 Figure 8 讨论的正是没有它的情形，"
+           "而 noop 恰好是该问题的另一种解法（论文 5.4.2）。",
 ))
