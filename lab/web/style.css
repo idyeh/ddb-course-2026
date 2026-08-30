@@ -270,10 +270,23 @@ input[type=range]::-webkit-slider-thumb {
 .run-row { display: flex; gap: 8px; margin-top: 6px; }
 .run-row button { flex: 1; }
 
+.notice {
+  margin: 2px 0 0; padding: 8px 11px; border-radius: 10px; font-size: 12px; line-height: 1.5;
+}
+.notice.bad { background: var(--warm); color: var(--accent-2);
+  border: 1px solid color-mix(in srgb, var(--accent-2) 40%, transparent); }
+.notice.warn { background: var(--warm); color: var(--accent-2); }
+
 .checks { display: flex; flex-direction: column; gap: 8px; }
 .check { border-radius: 10px; padding: 9px 11px; font-size: 12.5px; border: 1px solid var(--line); }
 .check.ok { background: var(--soft); border-color: color-mix(in srgb, var(--ok) 30%, transparent); }
 .check.bad { background: var(--warm); border-color: color-mix(in srgb, var(--accent-2) 40%, transparent); }
+.check.unknown {
+  background: color-mix(in srgb, var(--muted) 9%, transparent);
+  border-color: color-mix(in srgb, var(--muted) 35%, transparent);
+  border-style: dashed;
+}
+.check.unknown .name em { color: var(--muted); }
 .check .name { font-weight: 700; display: flex; gap: 6px; align-items: baseline; }
 .check .name em { font-style: normal; font-size: 11px; }
 .check.ok .name em { color: var(--ok); }

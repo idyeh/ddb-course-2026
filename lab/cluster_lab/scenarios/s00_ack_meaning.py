@@ -35,7 +35,7 @@ DURATION = 2100
 def run(params: dict[str, Any], seed: int) -> RunResult:
     kernel, trace, network, cluster = build(
         "ack-meaning", "确认是何意味", params, seed, ["A", "B", "C"],
-        auto_election=False, ack=params["ack"],
+        views=("cluster", "history"), auto_election=False, ack=params["ack"],
     )
     client = Client("客户端", kernel, trace, network, timeout=params["client_timeout"])
 

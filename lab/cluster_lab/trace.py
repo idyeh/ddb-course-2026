@@ -36,6 +36,8 @@ class Trace:
         self.facts: dict[str, Any] = {}
         self._sequence = 0
         self._last_tick = 0
+        self._closers: list[Any] = []
+        self._closed = False
 
     # -- description of the stage ------------------------------------------------
 
@@ -69,6 +71,24 @@ class Trace:
             raise ValueError(f"unknown note level {level!r}")
         return self.record(at, "note", level=level, text=text, ref=ref, title=title)
 
+    # -- finalisation -------------------------------------------------------------
+
+    def on_close(self, closer: Any) -> None:
+        """Register work that must run before the trace is handed out.
+
+        The trace contract says every message ends in exactly one `msg.deliver` or
+        `msg.drop`. Anything still in flight when the run stops has to be accounted
+        for here rather than left hanging in the animation.
+        """
+        self._closers.append(closer)
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        for closer in self._closers:
+            closer()
+
     # -- output -----------------------------------------------------------------
 
     @property
@@ -76,6 +96,7 @@ class Trace:
         return self._last_tick
 
     def to_dict(self, summary: dict[str, Any] | None = None) -> dict[str, Any]:
+        self.close()
         return {
             "schema": SCHEMA_VERSION,
             "scenario": self.scenario,

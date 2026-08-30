@@ -329,6 +329,15 @@ class RaftNode:
         self.reset_election_timer()
 
         prev_index = message["prevLogIndex"]
+        if prev_index < self.log_base:
+            # The prefix this message describes has already been compacted into our
+            # snapshot. `term_at` cannot answer for it, and appending relative to it
+            # would write inside the prefix. Tell the leader where our snapshot ends.
+            self._send(source, {"type": "AppendEntriesReply", "success": False,
+                                "matchIndex": 0, "compactedThrough": self.log_base,
+                                "readId": message.get("readId")},
+                       text=f"前缀已压缩 ≤ {self.log_base}")
+            return
         if prev_index > self.last_index or self.term_at(prev_index) != message["prevLogTerm"]:
             self._send(source, {"type": "AppendEntriesReply", "success": False,
                                 "matchIndex": 0, "readId": message.get("readId")},
@@ -337,6 +346,8 @@ class RaftNode:
 
         for offset, raw in enumerate(message["entries"]):
             index = prev_index + 1 + offset
+            if index <= self.log_base:
+                continue  # already durable inside the snapshot; never rewrite it
             if index <= self.last_index:
                 if self.term_at(index) == raw["term"]:
                     continue
@@ -374,8 +385,14 @@ class RaftNode:
             self.next_index[source] = self.match_index[source] + 1
             self._advance_commit()
         else:
-            # Walk `nextIndex` back until the prefixes agree, then append the suffix.
-            self.next_index[source] = max(1, self.next_index.get(source, 1) - 1)
+            compacted = message.get("compactedThrough")
+            if compacted:
+                # The follower told us exactly where its snapshot ends; resume there
+                # instead of walking back one index at a time into a discarded prefix.
+                self.next_index[source] = compacted + 1
+            else:
+                # Walk `nextIndex` back until the prefixes agree, then append the suffix.
+                self.next_index[source] = max(1, self.next_index.get(source, 1) - 1)
             self.send_append(source)
 
     # -- commit and apply --------------------------------------------------------

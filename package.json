@@ -18,6 +18,7 @@
     "check": "pnpm run check:source && pnpm run build && pnpm run check:html",
     "test:examples": "python3 -m unittest discover -s examples -p 'test_*.py'",
     "test:lab": "python3 -m unittest discover -s lab -t lab -p 'test_*.py'",
+    "test:lab:browser": "node lab/tests/smoke.mjs",
     "lab": "python3 lab/run.py serve"
   },
   "devDependencies": {

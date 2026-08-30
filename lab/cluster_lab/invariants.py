@@ -154,10 +154,11 @@ def linearizable(trace: Trace) -> CheckResult:
     checked = []
     for key, ops in sorted(per_key.items()):
         if len(ops) > MAX_OPERATIONS:
-            return CheckResult(
-                name, True,
-                f"键 {key} 的历史有 {len(ops)} 个操作，超过检查器上限 {MAX_OPERATIONS}，"
-                "本次未做线性一致检查（这不是通过，是未检查）。",
+            return CheckResult.inconclusive(
+                name,
+                f"键 {key} 的历史有 {len(ops)} 个操作，超过穷举检查器的上限 "
+                f"{MAX_OPERATIONS}，本次没有做线性一致检查。"
+                "未检查既不是通过也不是违反：这条性质仍然待证。",
             )
         if find_linearization(ops) is not None:
             checked.append(f"{key}({len(ops)})")
@@ -359,8 +360,34 @@ def value_conserved(trace: Trace) -> CheckResult:
     return CheckResult(name, True, f"总额保持在 {final}。")
 
 
+def log_structure_sound(trace: Trace) -> CheckResult:
+    """Structural invariant: the suffix starts just above the snapshot and is dense.
+
+    A stale message must never be able to write inside a compacted prefix, so this
+    is checked on every replica rather than trusted.
+    """
+    name = "日志结构自洽 (log structure sound)"
+    final = trace.facts.get("final", {})
+    for node, state in sorted(final.items()):
+        base = state.get("base", 0)
+        indexes = [entry["index"] for entry in state.get("log", [])]
+        if any(index <= base for index in indexes):
+            return CheckResult(
+                name, False,
+                f"{node} 的快照位置是 {base}，日志里却仍有索引 {min(indexes)} 的条目——"
+                "有消息写进了已被压缩的前缀。",
+            )
+        if indexes and indexes != list(range(base + 1, base + 1 + len(indexes))):
+            return CheckResult(
+                name, False,
+                f"{node} 的日志索引不连续：快照位置 {base}，条目索引 {indexes}。",
+            )
+    return CheckResult(name, True, f"{len(final)} 个节点的快照位置与日志后缀都连续自洽。")
+
+
 CHECKERS = {
     "linearizable": linearizable,
+    "log_structure_sound": log_structure_sound,
     "value_conserved": value_conserved,
     "aggregate_result_correct": aggregate_result_correct,
     "join_complete": join_complete,

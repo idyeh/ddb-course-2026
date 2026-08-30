@@ -12,6 +12,7 @@ import os
 import subprocess
 import sys
 import unittest
+import urllib.error
 import urllib.request
 from pathlib import Path
 from threading import Thread
@@ -89,18 +90,46 @@ class TraceContractTests(unittest.TestCase):
                     last_tick, last_seq = event["t"], event["seq"]
 
     def test_every_message_is_delivered_or_dropped_exactly_once(self) -> None:
+        """The contract the README states: no message is left hanging at the horizon."""
         for scenario in registry.all_scenarios():
             with self.subTest(scenario=scenario.id):
                 payload = run(scenario.id)
                 sent, ended = set(), []
                 for event in payload["events"]:
                     if event["type"] == "msg.send":
-                        self.assertNotIn(event["id"], sent)
+                        self.assertNotIn(event["id"], sent, "duplicate send id")
                         sent.add(event["id"])
                     elif event["type"] in {"msg.deliver", "msg.drop"}:
                         ended.append(event["id"])
-                self.assertEqual(len(ended), len(set(ended)))
-                self.assertTrue(set(ended) <= sent)
+                self.assertEqual(len(ended), len(set(ended)), "a message ended twice")
+                self.assertEqual(set(ended), sent,
+                                 f"unresolved at the horizon: {sorted(sent - set(ended))}")
+
+    def test_messages_still_travelling_at_the_horizon_are_named_as_such(self) -> None:
+        payload = run("raft-election")
+        closing = [event for event in payload["events"]
+                   if event["type"] == "msg.drop" and event.get("cause") == "simulation_end"]
+        self.assertTrue(closing, "this scenario should end with heartbeats in flight")
+        for event in closing:
+            self.assertEqual(event["t"], payload["duration"])
+
+    def test_declared_views_match_the_views_the_trace_emits(self) -> None:
+        """The menu promises tabs; the trace decides which ones the UI can render."""
+        for scenario in registry.all_scenarios():
+            with self.subTest(scenario=scenario.id):
+                self.assertEqual(list(scenario.views), run(scenario.id)["views"])
+
+    def test_every_check_reports_one_of_three_states(self) -> None:
+        for scenario in registry.all_scenarios():
+            with self.subTest(scenario=scenario.id):
+                summary = run(scenario.id)["summary"]
+                for check in summary["checks"]:
+                    self.assertIn(check["status"], {"pass", "fail", "inconclusive"})
+                    if check["status"] == "fail":
+                        self.assertIn(check["name"], summary["violations"])
+                    if check["status"] == "inconclusive":
+                        self.assertIn(check["name"], summary["inconclusive"])
+                        self.assertNotIn(check["name"], summary["violations"])
 
     def test_declared_invariants_all_appear_in_the_summary(self) -> None:
         for scenario in registry.all_scenarios():
@@ -283,6 +312,101 @@ class PartitionPolicyTests(unittest.TestCase):
         failing = next(check for check in payload["summary"]["checks"]
                        if check["name"] == "线性一致 (linearizable)")
         self.assertTrue(failing["counterexample"])
+
+
+class SnapshotSafetyTests(unittest.TestCase):
+    """Regression coverage for a stale AppendEntries arriving after compaction."""
+
+    @staticmethod
+    def _compacted_follower():
+        from cluster_lab.kernel import Kernel
+        from cluster_lab.network import Network
+        from cluster_lab.nodes.kv import put
+        from cluster_lab.nodes.raft import Entry, RaftCluster
+        from cluster_lab.trace import Trace
+
+        trace = Trace("unit", 1, {}, ["cluster"])
+        kernel = Kernel(seed=1)
+        network = Network(kernel, trace)
+        cluster = RaftCluster(kernel, trace, network, ["A", "B"], auto_election=False)
+        node = cluster.nodes["B"]
+        node.current_term = 3
+        for index in range(1, 5):
+            node.log.append(Entry(3, index, put(f"op-{index}", f"req-{index}", "x", index)))
+        node.commit_index = node.last_applied = 4
+        node._apply_committed()
+        node.compact(3)
+        return kernel, node
+
+    def test_a_stale_append_entries_cannot_write_inside_the_snapshot(self) -> None:
+        kernel, node = self._compacted_follower()
+        self.assertEqual(node.log_base, 3)
+        before = node.machine.summary()
+
+        # An AppendEntries from the same term, delayed long enough that it still
+        # describes a prefix this replica has already compacted away.
+        node.receive("A", {
+            "type": "AppendEntries", "term": 3, "leader": "A",
+            "prevLogIndex": 0, "prevLogTerm": 0, "leaderCommit": 0, "readId": None,
+            "entries": [
+                {"term": 3, "index": index,
+                 "command": {"kind": "set", "key": "x", "value": index * 10,
+                             "opId": f"stale-{index}", "reqId": f"stale-{index}"}}
+                for index in (1, 2)
+            ],
+        })
+
+        self.assertEqual(node.log_base, 3, "the snapshot position must not move")
+        self.assertTrue(all(entry.index > node.log_base for entry in node.log),
+                        f"log holds entries inside the snapshot: "
+                        f"{[entry.index for entry in node.log]}")
+        self.assertEqual([entry.index for entry in node.log],
+                         list(range(node.log_base + 1, node.last_index + 1)))
+        self.assertEqual(node.last_index, 4)
+        self.assertEqual(node.commit_index, 4)
+        self.assertEqual(node.machine.summary(), before, "state must be untouched")
+
+    def test_the_reply_tells_the_leader_where_the_snapshot_ends(self) -> None:
+        kernel, node = self._compacted_follower()
+        sent: list[dict] = []
+        node.cluster.network.send = lambda source, target, message, label="": sent.append(message)
+        node.receive("A", {
+            "type": "AppendEntries", "term": 3, "leader": "A", "prevLogIndex": 0,
+            "prevLogTerm": 0, "leaderCommit": 0, "entries": [], "readId": None,
+        })
+        reply = sent[-1]
+        self.assertFalse(reply["success"])
+        self.assertEqual(reply["compactedThrough"], 3)
+
+    def test_entries_overlapping_the_snapshot_boundary_are_skipped_not_rewritten(self) -> None:
+        kernel, node = self._compacted_follower()
+        node.receive("A", {
+            "type": "AppendEntries", "term": 3, "leader": "A",
+            "prevLogIndex": 3, "prevLogTerm": node.snapshot_term, "leaderCommit": 4,
+            "readId": None,
+            "entries": [
+                {"term": 3, "index": 4,
+                 "command": {"kind": "set", "key": "x", "value": 4,
+                             "opId": "op-4", "reqId": "req-4"}},
+                {"term": 3, "index": 5,
+                 "command": {"kind": "set", "key": "x", "value": 5,
+                             "opId": "op-5", "reqId": "req-5"}},
+            ],
+        })
+        self.assertEqual([entry.index for entry in node.log], [4, 5])
+        self.assertEqual(node.log_base, 3)
+
+    def test_snapshot_catchup_survives_a_lossy_slow_network(self) -> None:
+        """The configuration from the review: high loss and long, variable delays."""
+        for seed in (25, 2026, 7, 101, 4242):
+            with self.subTest(seed=seed):
+                payload = run("snapshot-catchup", seed=seed, drop=0.5,
+                              delay_min=100, delay_max=200)
+                self.assertNotIn("日志结构自洽 (log structure sound)", violations(payload))
+                for node, state in payload["facts"]["final"].items():
+                    indexes = [entry["index"] for entry in state["log"]]
+                    self.assertTrue(all(index > state["base"] for index in indexes),
+                                    f"{node}: base={state['base']} log={indexes}")
 
 
 class SnapshotTests(unittest.TestCase):
@@ -651,6 +775,189 @@ class ArchitectureTests(unittest.TestCase):
                    for event in payload["events"]):
                 after_reply.add(architecture)
         self.assertEqual(after_reply, {"cockroachdb", "tidb"})
+
+
+class BoundedCheckerTests(unittest.TestCase):
+    """A checker that gave up must never be indistinguishable from one that passed."""
+
+    def test_a_history_within_budget_is_actually_checked(self) -> None:
+        check = run("jepsen-loop", ops=9, nemesis="none",
+                    read="readindex")["summary"]["checks"][0]
+        self.assertEqual(check["status"], "pass")
+
+    def test_a_history_over_budget_is_reported_as_not_checked(self) -> None:
+        payload = run("jepsen-loop", ops=20, nemesis="none", read="readindex")
+        check = payload["summary"]["checks"][0]
+        self.assertEqual(check["status"], "inconclusive")
+        self.assertIn("未检查", check["detail"])
+        self.assertEqual(payload["summary"]["violations"], [])
+        self.assertIn(check["name"], payload["summary"]["inconclusive"])
+
+    def test_every_requested_operation_actually_runs(self) -> None:
+        """Operations must fit before the horizon whatever the instructor asks for."""
+        for ops in (4, 9, 16, 24):
+            with self.subTest(ops=ops):
+                payload = run("jepsen-loop", ops=ops, nemesis="none", read="readindex")
+                self.assertEqual(payload["summary"]["metrics"]["历史操作数"], ops)
+
+
+class ParameterValidationTests(unittest.TestCase):
+    """Cross-field rules: a range check on each field alone cannot express these."""
+
+    INVALID = [
+        {"delay_min": 200, "delay_max": 18},
+        {"timeout_min": 2000, "timeout_max": 300},
+        {"timeout_min": 20, "timeout_max": 20},
+    ]
+
+    def test_invalid_pairs_are_rejected_with_an_actionable_message(self) -> None:
+        for options in self.INVALID:
+            with self.subTest(**options):
+                with self.assertRaises(ValueError) as caught:
+                    run("raft-election", **options)
+                message = str(caught.exception)
+                for name in options:
+                    label = next(param.label for param in registry.get("raft-election").params.params
+                                 if param.name == name)
+                    self.assertIn(label, message)
+
+    def test_the_http_api_answers_400_rather_than_failing_mid_run(self) -> None:
+        httpd = server.serve(port=0)
+        Thread(target=httpd.serve_forever, daemon=True).start()
+        base = f"http://127.0.0.1:{httpd.server_address[1]}"
+        try:
+            request = urllib.request.Request(
+                f"{base}/api/run",
+                data=json.dumps({"scenario": "raft-election",
+                                 "params": {"delay_min": 200, "delay_max": 18}}).encode(),
+                headers={"Content-Type": "application/json"},
+            )
+            with self.assertRaises(urllib.error.HTTPError) as caught:
+                urllib.request.urlopen(request, timeout=20)
+            self.assertEqual(caught.exception.code, 400)
+            with caught.exception as response:
+                self.assertIn("error", json.loads(response.read()))
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+
+    def test_every_scenario_that_exposes_a_pair_declares_the_rule(self) -> None:
+        for scenario in registry.all_scenarios():
+            names = {param.name for param in scenario.params.params}
+            rules = {(rule.lower, rule.upper) for rule in scenario.params.rules}
+            if {"delay_min", "delay_max"} <= names:
+                self.assertIn(("delay_min", "delay_max"), rules, scenario.id)
+            if {"timeout_min", "timeout_max"} <= names:
+                self.assertIn(("timeout_min", "timeout_max"), rules, scenario.id)
+
+    def test_defaults_are_always_valid(self) -> None:
+        for scenario in registry.all_scenarios():
+            with self.subTest(scenario=scenario.id):
+                scenario.params.validate(scenario.params.defaults())
+
+    def test_a_heartbeat_close_to_the_election_timeout_is_flagged_not_blocked(self) -> None:
+        payload = run("raft-election", heartbeat=200, timeout_min=250, timeout_max=400)
+        self.assertTrue(payload["summary"]["advisories"])
+        self.assertEqual(run("raft-election")["summary"]["advisories"], [])
+
+
+class InstructorScriptFiguresTests(unittest.TestCase):
+    """Every exact number printed in README.md's classroom scripts.
+
+    Course material that quotes figures has to be regression-tested, otherwise the
+    lecturer reads one number aloud while the projector shows another.
+    """
+
+    @staticmethod
+    def metrics(scenario: str, **options):
+        return run(scenario, **options)["summary"]["metrics"]
+
+    def test_sharding_tradeoff_table(self) -> None:
+        expected = {
+            "range": ("3.83", 1, 1),
+            "hash": ("1.33", 6, 6),
+            "composite": ("4.00", 1, 1),
+            "salted": ("1.93", 6, 1),
+        }
+        for strategy, (ratio, hot, cold) in expected.items():
+            with self.subTest(strategy=strategy):
+                metrics = self.metrics("shard-strategies", strategy=strategy)
+                self.assertEqual(metrics["最热/平均"], ratio)
+                self.assertEqual(metrics["热点租户扫描触及分片"], hot)
+                self.assertEqual(metrics["普通租户扫描触及分片"], cold)
+
+    def test_coordination_comparison_table(self) -> None:
+        expected = {
+            "none": (12, 0, "4000 / 3942"),
+            "coordinate": (24, 113, "4000 / 4000"),
+            "preorder": (6, 0, "4000 / 4000"),
+        }
+        for mode, (round_trips, cross_shard, total) in expected.items():
+            with self.subTest(mode=mode):
+                metrics = self.metrics("order-vs-coordinate", mode=mode)
+                self.assertEqual(metrics["协调往返 (round trips)"], round_trips)
+                self.assertEqual(metrics["执行期跨分片消息"], cross_shard)
+                self.assertEqual(metrics["总额 (期望 / 实际)"], total)
+
+    def test_lost_rows_in_the_uncolocated_local_join(self) -> None:
+        metrics = self.metrics("join-strategies", strategy="local", colocated="no")
+        self.assertEqual(metrics["结果行数 / 正确行数"], "1727 / 6918")
+
+    def test_pushdown_ladder_bytes(self) -> None:
+        ladder = [self.metrics("pushdown-aggregation", pushdown=level)["跨网络字节 (bytes)"]
+                  for level in ("none", "predicate", "predicate_projection", "full")]
+        self.assertEqual(ladder, [307200, 69120, 17280, 128])
+
+    def test_two_phase_commit_blocking_window(self) -> None:
+        single = self.metrics("two-phase-commit", crash_point="after_decision",
+                              coordinator_log="single")
+        replicated = self.metrics("two-phase-commit", crash_point="after_decision",
+                                  coordinator_log="replicated")
+        self.assertEqual(single["T1 阻塞时长 (ticks)"], "1892")
+        self.assertEqual(replicated["T1 阻塞时长 (ticks)"], "1103")
+
+    def test_divergent_replica_tokens(self) -> None:
+        metrics = self.metrics("nondeterministic-apply", mode="at_apply")
+        self.assertEqual(metrics["A 的状态"].split()[0], "t1=A@280")
+        self.assertEqual(metrics["B 的状态"].split()[0], "t1=B@320")
+        self.assertEqual(metrics["C 的状态"].split()[0], "t1=C@317")
+
+    def test_the_clock_counterexample_pair(self) -> None:
+        checks = run("four-clocks", clock="physical", skew="on")["summary"]["checks"]
+        self.assertIn("b1(160)", checks[0]["detail"])
+        self.assertIn("c2(90)", checks[0]["detail"])
+
+    def test_the_search_reports_a_two_operation_counterexample(self) -> None:
+        metrics = self.metrics("jepsen-loop", read="leader_only", nemesis="partition")
+        self.assertEqual(metrics["最小反例操作数"], 2)
+
+    def test_the_wal_violation_leaves_the_loser_value_on_disk(self) -> None:
+        metrics = self.metrics("aries-recovery", wal_policy="no_wal")
+        self.assertEqual(metrics["崩溃时日志持久化到"], "LSN 4")
+        self.assertIn("c=30", metrics["恢复结果"])
+
+
+class DocumentationTests(unittest.TestCase):
+    """Course material is part of the product: keep it checkable."""
+
+    README = (LAB_ROOT / "README.md").read_text(encoding="utf-8")
+
+    def test_every_path_in_the_readme_directory_listing_exists(self) -> None:
+        block = self.README.split("## 目录", 1)[1].split("```text", 1)[1].split("```", 1)[0]
+        checked = 0
+        for line in block.splitlines():
+            for entry in line.strip().split():
+                if not entry.endswith((".py", ".js", ".css", ".html", ".md")):
+                    continue
+                self.assertTrue(list(LAB_ROOT.rglob(entry)),
+                                f"README lists {entry!r}, which does not exist")
+                checked += 1
+        self.assertGreater(checked, 20, "the listing check found suspiciously little")
+
+    def test_every_registered_demo_appears_in_the_instructor_script(self) -> None:
+        for scenario in registry.all_scenarios():
+            with self.subTest(scenario=scenario.id):
+                self.assertIn(f"`{scenario.id}`", self.README)
 
 
 class ApiTests(unittest.TestCase):

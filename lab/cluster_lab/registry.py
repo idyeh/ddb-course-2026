@@ -11,17 +11,41 @@ from .trace import Trace
 RunFn = Callable[[dict[str, Any], int], "RunResult"]
 
 
+PASS = "pass"
+FAIL = "fail"
+INCONCLUSIVE = "inconclusive"
+
+
 @dataclass
 class CheckResult:
+    """A check has three outcomes, not two.
+
+    `inconclusive` exists because a bounded checker that ran out of budget has not
+    established anything. Encoding that as a pass would let a green panel stand in
+    for a proof obligation nobody discharged.
+    """
+
     name: str
     ok: bool
     detail: str = ""
     counterexample: list[dict[str, Any]] = field(default_factory=list)
+    status: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.status:
+            self.status = PASS if self.ok else FAIL
+        if self.status == INCONCLUSIVE:
+            self.ok = True  # not a violation, but not a pass either
+
+    @classmethod
+    def inconclusive(cls, name: str, detail: str) -> "CheckResult":
+        return cls(name, True, detail, status=INCONCLUSIVE)
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "name": self.name,
             "ok": self.ok,
+            "status": self.status,
             "detail": self.detail,
             "counterexample": self.counterexample,
         }
@@ -38,7 +62,10 @@ class RunResult:
             {
                 "metrics": self.metrics,
                 "checks": [check.to_dict() for check in self.checks],
-                "violations": [check.name for check in self.checks if not check.ok],
+                "violations": [check.name for check in self.checks
+                               if check.status == FAIL],
+                "inconclusive": [check.name for check in self.checks
+                                 if check.status == INCONCLUSIVE],
             }
         )
 
@@ -87,6 +114,7 @@ class Scenario:
             "subtitle": self.subtitle,
             "views": list(self.views),
             "params": self.params.to_list(),
+            "rules": [rule.to_dict() for rule in self.params.rules],
             "question": self.question,
             "takeaway": self.takeaway,
             "prediction": self.prediction.to_dict() if self.prediction else None,

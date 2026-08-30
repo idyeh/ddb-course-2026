@@ -186,3 +186,30 @@ The directory listing mentions `lab/PLAN.md`, which is not present, and the boun
 8. Add a compact browser smoke suite for scenario/view/controls/export coverage.
 
 After items 1–3, the lab should be dependable for normal classroom use, including guided parameter changes. After items 4–8, it will also be much safer as an open-ended student exploration tool.
+
+
+---
+
+# 整改记录 (remediation log)
+
+整改日期：2026-08-30。以下按评审给出的顺序处理，每一项都附带了回归测试。
+
+| 编号 | 状态 | 处理方式 | 回归测试 |
+|---|---|---|---|
+| C1 | 已修复 | `_on_append_entries` 现在拒绝 `prevLogIndex < log_base` 的请求，并在回复里带上 `compactedThrough` 提示，Leader 据此直接从快照边界继续；追加循环额外跳过任何落在快照内的索引，不再产生负偏移。新增结构性不变式 `log_structure_sound`，在 `snapshot-catchup` 与 `jepsen-loop` 中常态检查。 | `SnapshotSafetyTests`（4 项，含评审给出的高丢包配置） |
+| C2 | 已修复 | 改写多数派定义：按配置成员总数计算，崩溃节点仍在分母内；并说明若多数派随存活节点缩小会出现互不相交的多数派。同时把“省略快照”改为“快照与日志压缩是简化实现”。 | — |
+| H1 | 已修复 | `ParamSet` 增加跨字段规则（`delay_min ≤ delay_max`、`timeout_min < timeout_max`），规则**由字段自动推导**，新增场景不会漏配；界面在拖动时即时钳制成对滑块；心跳与选举超时过近时给出不阻塞的提示。 | `ParameterValidationTests`（5 项，含 HTTP 400 路径） |
+| H2 | 已修复 | 选择“轨迹必须闭合”：`Trace` 增加 `on_close` 钩子，`Network` 在序列化前把仍在途中的消息记为 `msg.drop / simulation_end`。测试改为断言送达集合**等于**发送集合。 | `test_every_message_is_delivered_or_dropped_exactly_once`、`test_messages_still_travelling_at_the_horizon_are_named_as_such` |
+| H3 | 已修复 | `CheckResult` 改为三态（`pass` / `fail` / `inconclusive`），`summary` 单独列出 `inconclusive`，界面用灰色虚线框渲染。同时把 `jepsen-loop` 的操作数上限提高到 24，使这个状态可被主动演示。 | `BoundedCheckerTests`、`test_every_check_reports_one_of_three_states` |
+| M1 | 已修复 | `ack-meaning` 现在真正输出 `history` 视图。 | `test_declared_views_match_the_views_the_trace_emits` |
+| M2 | 已修复 | 讲稿数字全部更新为当前输出，并逐个写成断言。 | `InstructorScriptFiguresTests`（9 项） |
+| M3 | 已修复 | 控件改名为“阶段暂停”，README 说明它在阶段标记与警告处暂停，普通讲解要点不打断播放。 | — |
+| M4 | 已补充 | 新增 `web/smoke.js`（可在控制台调用 `runSmoke()`）与 `lab/tests/smoke.mjs` 无头运行器，复用课件已有的 Playwright。当前 142 项断言全部通过。 | `corepack pnpm test:lab:browser` |
+| L1 | 已修复 | README 写明需要 Python 3.10+，给出自检命令与换端口的方法。 | — |
+| L2 | 已修复 | 目录清单按实际文件重写，并增加“清单里的每个路径都必须存在”“每个已注册演示都必须出现在讲稿里”两项测试。 | `DocumentationTests` |
+
+顺带修掉的一个问题：`jepsen-loop` 的操作间隔是固定的 210 tick，
+操作数调大时后面的操作会落在演示时长之外、根本不会发出。现在间隔按操作数自适应，
+并有断言保证“要求多少个操作就真的跑多少个”。
+
+修复后：Python 测试 103 项，浏览器冒烟 142 项断言，全部通过。

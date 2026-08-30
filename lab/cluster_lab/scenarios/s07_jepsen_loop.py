@@ -30,7 +30,9 @@ PARAMS = ParamSet((
         ("crash", "随机崩溃并重启"),
         ("none", "不注入故障"),
     ), axis=True),
-    Param("ops", "每轮操作数 (operations)", "int", 9, minimum=4, maximum=MAX_OPERATIONS),
+    Param("ops", "每轮操作数 (operations)", "int", 9, minimum=4, maximum=24,
+          help=f"超过 {MAX_OPERATIONS} 个单键操作后，穷举检查器会放弃并报“未检查”——"
+               "那既不是通过，也不是违反。"),
     Param("seeds", "搜索多少个种子 (seeds)", "int", 12, minimum=1, maximum=40,
           help="从起始种子开始逐个尝试，找到第一条反例就停下。"),
     DROP, DELAY_MIN, DELAY_MAX, SEED,
@@ -57,8 +59,11 @@ def _one_run(params: dict[str, Any], seed: int):
 
     # Generator: unique written values make each read traceable to its source.
     value = [0]
+    # Space the operations so that every one of them fits before the horizon,
+    # however many the instructor asks for.
+    spacing = max(70, (END - 500) // max(1, params["ops"]))
     for number in range(params["ops"]):
-        at = 260 + number * 210
+        at = 260 + number * spacing
         target = rng.choice(NODES)
         if rng.random() < 0.45:
             value[0] += 1
@@ -104,7 +109,7 @@ def _one_run(params: dict[str, Any], seed: int):
     kernel.run(END)
     trace.facts["final"] = cluster.snapshot()
     trace.facts["client"] = client.outcomes()
-    checks = run_checks(trace, ("linearizable", "at_most_once"))
+    checks = run_checks(trace, ("linearizable", "at_most_once", "log_structure_sound"))
     return trace, checks, cluster, network, client
 
 
@@ -170,7 +175,8 @@ register(Scenario(
         why="随机搜索扩大的是调度覆盖，不是证明。"
             "固定种子提供重放能力；要得到更强的结论，需要小模型枚举或形式化验证。",
     ),
-    invariants=("linearizable", "at_most_once"),
+    invariants=("linearizable", "at_most_once", "log_structure_sound"),
     faults=("partition", "crash", "restart", "drop"),
-    caveat="检查器是穷举搜索，因此每轮操作数被限制在 14 以内；这是课堂规模，不是压力测试。",
+    caveat=f"线性一致检查器是穷举搜索。单键历史超过 {MAX_OPERATIONS} 个操作时它会放弃，"
+           "并把结果标成“未检查”而不是“通过”——把操作数调大就能看到这个状态。",
 ))

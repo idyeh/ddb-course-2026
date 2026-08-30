@@ -368,5 +368,6 @@ function entryHint(label) {
 }
 
 function dropCause(cause) {
-  return { partition: "分区丢弃", loss: "丢包", reply_lost: "回复丢失" }[cause] || "丢弃";
+  return { partition: "分区丢弃", loss: "丢包", reply_lost: "回复丢失",
+           simulation_end: "演示结束" }[cause] || "丢弃";
 }

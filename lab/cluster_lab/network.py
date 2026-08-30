@@ -35,8 +35,11 @@ class Network:
         self.down: set[str] = set()
         self.sent = 0
         self.dropped = 0
+        self.pending_at_end = 0
         self._message_id = 0
+        self._in_flight: dict[str, tuple[str, str]] = {}
         self._inbox: dict[str, Callable[[str, dict[str, Any]], None]] = {}
+        trace.on_close(self.close)
 
     # -- wiring ------------------------------------------------------------------
 
@@ -87,6 +90,7 @@ class Network:
         self._message_id += 1
         identifier = f"m{self._message_id}"
         self.sent += 1
+        self._in_flight[identifier] = (source, target)
         delay = self.kernel.rng.randint(self.delay_min, self.delay_max)
         eta = self.kernel.now + delay
         kind = message.get("type", "message")
@@ -111,6 +115,7 @@ class Network:
             extra = self.kernel.rng.randint(self.delay_min, self.delay_max)
             self._message_id += 1
             twin = f"m{self._message_id}"
+            self._in_flight[twin] = (source, target)
             self.trace.record(self.kernel.now, "msg.send", id=twin, **{"from": source},
                               to=target, kind=kind, label=f"{label} (重复)",
                               eta=self.kernel.now + delay + extra)
@@ -119,13 +124,23 @@ class Network:
 
     def _drop(self, identifier: str, cause: str) -> None:
         self.dropped += 1
+        self._in_flight.pop(identifier, None)
         self.trace.record(self.kernel.now, "msg.drop", id=identifier, cause=cause)
+
+    def close(self) -> None:
+        """Account for every message still travelling when the run stops."""
+        for identifier in sorted(self._in_flight, key=lambda item: int(item[1:])):
+            self.trace.record(self.kernel.now, "msg.drop", id=identifier,
+                              cause="simulation_end")
+        self.pending_at_end = len(self._in_flight)
+        self._in_flight.clear()
 
     def _deliver(self, identifier: str, source: str, target: str, message: dict[str, Any]) -> None:
         # A partition can form while the message is in flight; check again on arrival.
         if not self.reachable(source, target):
             self._drop(identifier, "partition")
             return
+        self._in_flight.pop(identifier, None)
         self.trace.record(self.kernel.now, "msg.deliver", id=identifier)
         handler = self._inbox.get(target)
         if handler is not None:

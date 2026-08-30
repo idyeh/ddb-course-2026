@@ -107,8 +107,8 @@ def run(params: dict[str, Any], seed: int) -> RunResult:
 
     trace.facts["final"] = cluster.snapshot()
     trace.facts["client"] = client.outcomes()
-    checks = run_checks(trace, ("linearizable", "acked_not_lost",
-                                "committed_prefix_stable", "replicas_agree"))
+    checks = run_checks(trace, ("linearizable", "acked_not_lost", "committed_prefix_stable",
+                                "replicas_agree", "log_structure_sound"))
     metrics = metrics_for(cluster, network, [client])
     installs = sum(1 for event in trace.events
                    if event["type"] == "log.snapshot" and event.get("installed"))
@@ -138,6 +138,7 @@ register(Scenario(
         why="Follower Read 先向 Leader 取一个 ReadIndex，再等本地应用位置到达那里。"
             "它宁可等待，也不返回一个无法证明的旧值——这正是它与陈旧读的区别。",
     ),
-    invariants=("linearizable", "acked_not_lost", "committed_prefix_stable", "replicas_agree"),
+    invariants=("linearizable", "acked_not_lost", "committed_prefix_stable",
+                "replicas_agree", "log_structure_sound"),
     faults=("partition", "heal", "drop"),
 ))

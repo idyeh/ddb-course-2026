@@ -3,11 +3,25 @@
 一个贯穿全课程的分布式系统演示工具。**只用 Python 标准库和浏览器**，不需要 pip、
 不需要 Node，也不参与课件构建。
 
+需要 **Python 3.10 或更高版本**（代码使用 `X | Y` 类型写法与结构化模式匹配语法）。
+开讲前先自检一次：
+
+```bash
+python3 -c "import sys; assert sys.version_info >= (3, 10), sys.version; print('ok', sys.version.split()[0])"
+```
+
 ```bash
 python3 lab/run.py serve
 ```
 
 浏览器会自动打开 <http://127.0.0.1:8000/>。左侧选演示，右侧改参数，中间看动画。
+8000 端口被占用时换一个：
+
+```bash
+python3 lab/run.py serve --port 8123
+```
+
+`--no-open` 可以不自动打开浏览器；服务只绑定回环地址，不对外提供访问。
 
 ## 它是怎么工作的
 
@@ -38,7 +52,8 @@ python3 lab/run.py …  ──►  确定性内核 ──►  一条完整的事
 
 快捷键：`空格` 播放/暂停，`←`/`→` 上一/下一事件，`R` 重跑，`P` 投影模式，`1–9` 切换演示。
 
-- **要点暂停**：默认打开。播放到教学要点时自动停下，方便讲解。
+- **阶段暂停**：默认打开。播放到**阶段标记**（每一幕的开头）与**警告 / 违规**要点时自动停下，
+  方便讲解；普通讲解要点会出现在卡片里但不打断播放，以免每隔几秒就卡一次。
 - **投影模式**：隐藏侧栏、放大字号，适合大屏。
 - **导出图形 / 导出轨迹**：SVG（当前视图）可直接放进幻灯片；JSON 是可引用的原始数据。
 - **跳到反例**：检查器给出反例时，可一键把播放头拖到那一刻；客户端历史里的相关操作会被圈出。
@@ -64,6 +79,10 @@ python3 lab/run.py …  ──►  确定性内核 ──►  一条完整的事
   查询等的是最慢的分区，不是平均值。
 
 ## 三分钟课堂脚本
+
+> 下面每个脚本里出现的具体数字都对应**默认参数 + 默认种子 2026**。
+> 这些数字由 `tests/test_lab.py::InstructorScriptFiguresTests` 固定，
+> 改动实现而忘了改讲稿会让测试失败。上课时仍请以界面右侧的实时指标为准。
 
 ### 绪论 · 确认是何意味 (`ack-meaning`)
 
@@ -185,8 +204,8 @@ python3 lab/run.py …  ──►  确定性内核 ──►  一条完整的事
 
    | 做法 | 协调往返 | 执行期跨分片消息 | 总额守恒 |
    |---|---:|---:|---|
-   | 不协调 | 12 | 0 | **✗ 3922 / 4000** |
-   | 执行中协调 (2PC) | 24 | 101 | ✓ |
+   | 不协调 | 12 | 0 | **✗ 3942 / 4000** |
+   | 执行中协调 (2PC) | 24 | 113 | ✓ |
    | 执行前定序 (Calvin 式) | **6** | **0** | ✓ |
 
 3. 重点讲两句：不协调最省消息，连普通丢包都扛不住；
@@ -289,32 +308,70 @@ python3 lab/run.py test
 python3 -m unittest discover -s lab -t lab -p 'test_*.py'
 ```
 
-测试分三类：
+还有一套在真实浏览器里跑的冒烟测试（可选，需要一次性安装 Chromium）：
 
-- **契约**：轨迹格式良好，事件时间单调，每条消息恰好送达或丢弃一次。
+```bash
+corepack pnpm browser:install && corepack pnpm test:lab:browser
+```
+
+它会自己起服务、遍历全部演示与视图标签、拖动时间轴、检查三种检查状态的渲染、
+验证成对参数无法被拖成非法组合，并检查导出的 SVG / JSON 内容。
+也可以在页面控制台里直接调用 `runSmoke()`。
+
+测试分四类：
+
+- **契约**：轨迹格式良好，事件时间单调，**每条消息恰好以一次送达或丢弃收尾**
+  （运行结束时仍在途中的消息会以 `simulation_end` 记为丢弃），
+  声明的视图与轨迹实际输出的视图一致，每项检查只报三种状态之一。
 - **正向**：正确配置在多个预先声明的种子下保持全部不变式。
 - **反向**：故意设错的配置**必须**给出反例。一个永远不会失败的演示，
   什么也证明不了——所以 `ack=local`、`retry=new_id`、`commit_rule=naive_majority`
   都被要求产生对应的违反。
+- **讲稿**：本文件里出现的每个具体数字都有对应断言，改了实现而忘了改讲稿会让测试失败。
+
+### 检查结果有三种状态
+
+| 状态 | 含义 | 界面 |
+|---|---|---|
+| 通过 pass | 这次运行里该性质成立 | 绿色 |
+| 违反 fail | 找到了反例，可一键跳到那一刻 | 红色 |
+| **未检查 inconclusive** | 检查器因为规模上限放弃了，什么也没证明 | 灰色虚线框 |
+
+线性一致检查是穷举搜索，单键历史超过 14 个操作时会进入第三种状态。
+**未检查不是通过**：它在 `summary.inconclusive` 里单独列出，不计入违反，
+界面也不会给它绿色。把 `jepsen-loop` 的操作数调到 20 就能看到这个状态。
 
 ## 目录
 
 ```text
 lab/
-  run.py               命令行入口：list / run / compare / sweep / export / serve / test
+  run.py                 命令行入口：list / run / compare / sweep / export / serve / test
   cluster_lab/
-    kernel.py          确定性事件内核（逻辑时钟、最小堆、单一随机源）
-    network.py         延迟、丢包、乱序、重复、分区、定点截留
-    trace.py           事件模型与 JSON 序列化（与网页的唯一契约）
-    params.py          参数模式，表单由它生成
-    registry.py        场景注册表
-    invariants.py      不变式检查器，全部基于轨迹而非模拟器内部状态
-    nodes/             raft.py（教学子集）、kv.py（状态机与去重表）、client.py
-    scenarios/         每个演示一个文件，导入即注册
-    server.py          http.server + JSON API，仅绑定 127.0.0.1
-  web/                 index.html / style.css / app.js / player.js / views/
-  tests/               契约、正向、反向测试
-  PLAN.md              全课程演示的实施计划与分期
+    kernel.py            确定性事件内核（逻辑时钟、最小堆、单一随机源）
+    network.py           延迟、丢包、乱序、重复、分区、定点截留
+    trace.py             事件模型与 JSON 序列化（与网页的唯一契约）
+    params.py            参数模式与跨字段校验，表单由它生成
+    registry.py          场景注册表；检查结果的三种状态在这里定义
+    invariants.py        不变式检查器，全部基于轨迹而非模拟器内部状态
+    server.py            http.server + JSON API，仅绑定 127.0.0.1
+    checkers/
+      linearizable.py    支持 unknown 结果的线性一致检查与反例收缩
+    nodes/
+      raft.py            教学版 Raft：选举、复制、读路径、日志压缩与快照
+      kv.py              复制状态机与去重表
+      client.py          客户端：请求编号、重试、ok / unknown / fail
+      txn.py             两阶段提交：协调者、备用协调者、参与者、决议日志
+      ordering.py        不协调 / 2PC / 预定序三种做法
+      routing.py         四种分片策略、路由表与分片节点
+      storage.py         WAL、缓冲池、ARIES 三阶段与 CLR
+      query.py           放置、交换、Join、聚合与代价模型
+    scenarios/           每个演示一个文件，导入即注册
+  web/
+    index.html  style.css  app.js  player.js
+    views/               cluster.js history.js timeline.js
+                         shards.js storage.js dataflow.js
+  tests/test_lab.py      契约、正向、反向、参数校验与讲稿数字回归
+  docs/REVIEW.md         外部代码评审报告
 ```
 
 ## 与课件的关系
@@ -332,9 +389,13 @@ lab 是独立包：不改动 `slides/`，也不参与 `pnpm build` 与 `pnpm che
 
 ## 边界
 
-- **不是生产实现**。教学版 Raft 省略了持久化细节、成员变更与快照。
+- **不是生产实现**。教学版 Raft 简化了持久化细节，不实现成员变更；
+  快照与日志压缩是简化实现（见 `snapshot-catchup`），不含增量快照与分块传输。
 - **不是性能基准**。所有时间都是逻辑 tick，不可与真实系统比较。
-- **多数派 = 存活节点也要能通信**。崩溃节点在恢复前不计入任何多数派。
+- **多数派按配置成员总数计算**，即 `n // 2 + 1`。崩溃或不可达的节点仍然属于配置，
+  只是不能贡献选票或确认；因此故障过多时系统失去可用性，**而不会自动缩小多数派**。
+  如果多数派随存活节点缩小，两个互不相交的“多数派”就可能同时成立，安全性随之崩塌。
+  代码里始终使用固定的成员数：`majority(len(self.cluster.node_ids))`。
 - **线性一致检查是穷举搜索**，单键操作数超过 14 时不做检查，界面会明说“这不是通过，是未检查”。
 - **AP 与 2PC 都是教学模型**：AP 只做日志尽力传播，不含冲突合并；
   2PC 的参与者是单事务锁、无死锁检测，重点在 prepared 义务与决议持久化。

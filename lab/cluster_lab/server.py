@@ -21,7 +21,10 @@ def run_scenario(scenario_id: str, raw_params: dict[str, Any]) -> dict[str, Any]
     scenario = registry.get(scenario_id)
     params = scenario.params.resolve(raw_params)
     seed = int(params.get("seed", 0))
-    return scenario.run(params, seed).to_dict()
+    payload = scenario.run(params, seed).to_dict()
+    # Legal but questionable settings are reported, not rejected.
+    payload["summary"]["advisories"] = scenario.params.advise(params)
+    return payload
 
 
 def compare(scenario_id: str, raw_params: dict[str, Any], axis: str,

@@ -190,7 +190,10 @@ function field(param) {
     input.step = param.step ?? (param.kind === "float" ? 0.01 : 1);
     input.value = param.default;
     readout.textContent = param.default;
-    input.addEventListener("input", () => { readout.textContent = input.value; });
+    input.addEventListener("input", () => {
+      readout.textContent = input.value;
+      enforceRules(param.name);
+    });
     input.addEventListener("change", run);
     wrapper.appendChild(input);
   } else {
@@ -208,6 +211,31 @@ function field(param) {
     wrapper.appendChild(help);
   }
   return wrapper;
+}
+
+/** Keep paired fields consistent while dragging, so an invalid run cannot be built. */
+function enforceRules(changed) {
+  for (const rule of app.current?.rules || []) {
+    const lower = fieldInput(rule.lower);
+    const upper = fieldInput(rule.upper);
+    if (!lower || !upper) continue;
+    const gap = rule.strict ? Number(lower.step || 1) : 0;
+    if (Number(lower.value) + gap > Number(upper.value)) {
+      const follower = changed === rule.lower ? upper : lower;
+      const leaderValue = changed === rule.lower
+        ? Number(lower.value) + gap : Number(upper.value) - gap;
+      follower.value = String(Math.min(Number(follower.max ?? leaderValue),
+                                       Math.max(Number(follower.min ?? leaderValue),
+                                                leaderValue)));
+      const readout = follower.closest(".field")?.querySelector(".value");
+      if (readout) readout.textContent = follower.value;
+    }
+  }
+}
+
+function fieldInput(name) {
+  const wrapper = [...$("param-form").children].find((item) => item.dataset.name === name);
+  return wrapper ? wrapper.querySelector("input[type=range], input[type=number]") : null;
 }
 
 function readParams() {
@@ -241,7 +269,7 @@ async function run() {
     });
     const trace = await response.json();
     if (inFlight !== token) return;
-    if (trace.error) { toast(trace.error); return; }
+    if (trace.error) { showNotice(trace.error, "bad"); return; }
     app.trace = trace;
     app.eventCursor = 0;
     $("badge-seed").textContent = `seed ${trace.seed}`;
@@ -251,9 +279,10 @@ async function run() {
     player.load(trace);
     renderChecks(trace.summary.checks || []);
     renderMetrics(trace.summary.metrics || {});
+    showNotice((trace.summary.advisories || []).join(" "), "warn");
     $("sweep-result").hidden = true;
   } catch (error) {
-    toast(`运行失败：${error.message}`);
+    showNotice(`运行失败：${error.message}`, "bad");
   }
 }
 
@@ -287,7 +316,8 @@ function viewContainers() {
 
 /** Outline the operations a failing checker singled out. */
 function highlightCounterexample(checks) {
-  const failing = checks.find((check) => !check.ok && check.counterexample?.length);
+  const failing = checks.find((check) => (check.status || (check.ok ? "pass" : "fail")) === "fail"
+                                        && check.counterexample?.length);
   const ids = failing
     ? failing.counterexample.map((event) => event.opId ?? event.id).filter(Boolean)
     : [];
@@ -298,12 +328,15 @@ function renderChecks(checks) {
   const host = $("checks");
   host.replaceChildren();
   if (!checks.length) { host.innerHTML = '<p class="dim">该演示未声明不变式。</p>'; return; }
+  const LABEL = { pass: "通过", fail: "违反", inconclusive: "未检查" };
+  const CLASS = { pass: "ok", fail: "bad", inconclusive: "unknown" };
   for (const check of checks) {
+    const status = check.status || (check.ok ? "pass" : "fail");
     const box = document.createElement("div");
-    box.className = `check ${check.ok ? "ok" : "bad"}`;
-    box.innerHTML = `<div class="name"><em>${check.ok ? "通过" : "违反"}</em>${check.name}</div>
+    box.className = `check ${CLASS[status]}`;
+    box.innerHTML = `<div class="name"><em>${LABEL[status]}</em>${check.name}</div>
                      <p>${check.detail}</p>`;
-    if (!check.ok && check.counterexample?.length) {
+    if (status === "fail" && check.counterexample?.length) {
       const jump = document.createElement("button");
       jump.className = "ghost small";
       jump.textContent = "跳到反例";
@@ -387,7 +420,10 @@ function describe(event) {
         : "网络恢复";
     case "msg.send": return `${event.from} → ${event.to} ${event.kind} ${event.label}`;
     case "msg.deliver": return `${event.id} 送达`;
-    case "msg.drop": return `${event.id} 丢弃（${event.cause}）`;
+    case "msg.drop":
+      return event.cause === "simulation_end"
+        ? `${event.id} 在演示结束时仍在途中`
+        : `${event.id} 丢弃（${event.cause}）`;
     case "node.state": return `${event.node} → ${event.state} term ${event.term}（${event.reason}）`;
     case "node.crash": return `${event.node} 崩溃，易失状态丢失，日志与任期保留`;
     case "node.restart": return `${event.node} 重启，term ${event.term}，日志末尾 ${event.lastIndex}`;
@@ -546,6 +582,14 @@ function exportJson() {
   if (!app.trace) return;
   download(`${app.trace.scenario}-${app.trace.seed}.json`,
            new Blob([JSON.stringify(app.trace, null, 2)], { type: "application/json" }));
+}
+
+/** Parameter errors and advisories live next to the form, not in a passing toast. */
+function showNotice(message, kind) {
+  const box = $("param-notice");
+  box.hidden = !message;
+  box.textContent = message || "";
+  box.className = `notice ${kind || ""}`;
 }
 
 let toastTimer = null;

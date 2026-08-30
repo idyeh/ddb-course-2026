@@ -16,8 +16,8 @@
     </div>
   </div>
   <div class="topbar-actions">
-    <label class="switch" title="教学要点出现时自动暂停">
-      <input type="checkbox" id="pause-on-note" checked><span></span>要点暂停
+    <label class="switch" title="播放到阶段标记与警告时自动暂停；普通讲解要点不打断播放">
+      <input type="checkbox" id="pause-on-note" checked><span></span>阶段暂停
     </label>
     <button class="ghost" id="btn-projector" title="投影模式：放大字号，隐藏侧栏">投影模式</button>
     <button class="ghost" id="btn-export-svg">导出图形</button>
@@ -104,6 +104,7 @@
     <div class="card">
       <h2>参数 <small>parameters</small></h2>
       <form id="param-form" autocomplete="off"></form>
+      <p class="notice" id="param-notice" hidden></p>
       <div class="run-row">
         <button class="primary" id="btn-run">运行</button>
         <button class="ghost" id="btn-reset">恢复默认</button>
@@ -134,5 +135,6 @@
 <div class="toast" id="toast" hidden></div>
 
 <script type="module" src="app.js"></script>
+<script type="module" src="smoke.js"></script>
 </body>
 </html>

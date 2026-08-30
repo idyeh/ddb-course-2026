@@ -57,8 +57,47 @@ class Param:
 
 
 @dataclass(frozen=True)
+class Ordering:
+    """A relationship between two fields. Range checks alone cannot express these."""
+
+    lower: str
+    upper: str
+    strict: bool = False  # True when the upper bound is exclusive
+    hint: str = ""
+
+    def violated(self, values: dict[str, Any]) -> bool:
+        if self.lower not in values or self.upper not in values:
+            return False
+        if self.strict:
+            return values[self.lower] >= values[self.upper]
+        return values[self.lower] > values[self.upper]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"lower": self.lower, "upper": self.upper, "strict": self.strict,
+                "hint": self.hint}
+
+
+# Derived from which fields a scenario exposes, so a new scenario cannot forget them.
+STANDARD_ORDERINGS = (
+    Ordering("delay_min", "delay_max", hint="最小延迟不能大于最大延迟"),
+    Ordering("timeout_min", "timeout_max", strict=True,
+             hint="选举超时下界必须小于上界（上界不含，因此两者不能相等）"),
+)
+
+
+@dataclass(frozen=True)
 class ParamSet:
     params: tuple[Param, ...] = field(default_factory=tuple)
+
+    @property
+    def by_name(self) -> dict[str, Param]:
+        return {param.name: param for param in self.params}
+
+    @property
+    def rules(self) -> tuple[Ordering, ...]:
+        names = {param.name for param in self.params}
+        return tuple(rule for rule in STANDARD_ORDERINGS
+                     if {rule.lower, rule.upper} <= names)
 
     def defaults(self) -> dict[str, Any]:
         return {param.name: param.default for param in self.params}
@@ -72,7 +111,31 @@ class ParamSet:
                 resolved[param.name] = param.coerce(supplied[param.name])
             else:
                 resolved[param.name] = param.default
+        self.validate(resolved)
         return resolved
+
+    def validate(self, values: dict[str, Any]) -> None:
+        labels = self.by_name
+        for rule in self.rules:
+            if rule.violated(values):
+                relation = "小于" if rule.strict else "不大于"
+                raise ValueError(
+                    f"{labels[rule.lower].label} = {values[rule.lower]} 必须{relation} "
+                    f"{labels[rule.upper].label} = {values[rule.upper]}。{rule.hint}。"
+                )
+
+    def advise(self, values: dict[str, Any]) -> list[str]:
+        """Legal but questionable combinations. These change the lesson, not the run."""
+        notes = []
+        heartbeat = values.get("heartbeat")
+        timeout_min = values.get("timeout_min")
+        if heartbeat is not None and timeout_min is not None and heartbeat * 3 > timeout_min:
+            notes.append(
+                f"心跳间隔 {heartbeat} 与选举超时下界 {timeout_min} 太接近："
+                "Follower 常常等不到心跳就发起选举，演示会变成反复换届而不是正常运行。"
+                "这是合法的实验，但它换掉了这一讲要讲的东西。"
+            )
+        return notes
 
     def to_list(self) -> list[dict[str, Any]]:
         return [param.to_dict() for param in self.params]

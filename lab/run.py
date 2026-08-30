@@ -165,7 +165,12 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv if argv is not None else sys.argv[1:])
     if not getattr(args, "handler", None):
         args = parser.parse_args(["serve"])  # bare `run.py` opens the demo table
-    return args.handler(args)
+    try:
+        return args.handler(args)
+    except (ValueError, KeyError) as error:
+        # Parameter problems are the user's to fix, so show the message, not a traceback.
+        print(f"参数有误：{error}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":
