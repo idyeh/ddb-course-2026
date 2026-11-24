@@ -1,6 +1,6 @@
 # 分布式数据库开发：课件
 
-2026 版课件使用纯 Markdown 编写，并由 Marp 生成离线 HTML。课件不依赖 Quarto 或 Jupyter 才能演示；Python 仅用于课堂实验与示例验证。
+2026 版课件使用 Markdown 编写，并由 Marp 生成离线 HTML。课件不依赖 Quarto 或 Jupyter；Python 仅用于课堂实验与示例验证。
 
 ## 快速使用
 
